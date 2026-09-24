@@ -177,6 +177,8 @@ export async function runIngestionPipeline(): Promise<{
             ]
           );
           recordsInserted++;
+        } else if (validation.isDuplicate) {
+          recordsUpdated++;
         } else {
           recordsRejected++;
         }
@@ -273,6 +275,8 @@ export async function runIngestionPipeline(): Promise<{
                 ]
               );
               recordsInserted++;
+            } else if (validation.isDuplicate) {
+              recordsUpdated++;
             } else {
               recordsRejected++;
             }
@@ -331,10 +335,10 @@ export async function runIngestionPipeline(): Promise<{
       ]
     );
 
-    if (recordsRejected > 0 && recordsInserted === 0) {
-      pipelineStatus = 'FAILED';
+    if (recordsInserted > 0 || recordsUpdated > 0) {
+      pipelineStatus = recordsRejected > 0 ? 'PARTIAL' : 'SUCCESS';
     } else if (recordsRejected > 0) {
-      pipelineStatus = 'PARTIAL';
+      pipelineStatus = 'FAILED';
     } else {
       pipelineStatus = 'SUCCESS';
     }

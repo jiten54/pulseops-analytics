@@ -31,31 +31,48 @@ export default function App() {
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([]);
   const [selectedRegion, setSelectedRegion] = useState<string>('ALL');
 
-  // Load all analytics data
-  const loadPlatformData = async () => {
+  // Load all analytics data with defensive handling and retry
+  const loadPlatformData = async (retryCount = 0) => {
     try {
       setError(null);
-      const [metricsRes, trendRes, compRes, anomRes, runsRes] = await Promise.all([
-        fetch('/api/metrics'),
-        fetch(`/api/metrics/trend?region=${selectedRegion}`),
-        fetch('/api/metrics/comparison'),
-        fetch('/api/anomalies'),
-        fetch('/api/pipeline/runs')
-      ]);
 
-      if (!metricsRes.ok) throw new Error('API server returned error on metrics');
+      // Safe fetch helper that doesn't throw if non-critical endpoints fail
+      const safeFetchJson = async (url: string) => {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          return await res.json();
+        } catch (e) {
+          return null;
+        }
+      };
+
+      const metricsRes = await fetch('/api/metrics');
+      if (!metricsRes.ok) {
+        if (retryCount < 2) {
+          await new Promise(r => setTimeout(r, 1200));
+          return loadPlatformData(retryCount + 1);
+        }
+        throw new Error(`API server returned HTTP ${metricsRes.status} on metrics`);
+      }
 
       const metricsData = await metricsRes.json();
-      const trendData = await trendRes.json();
-      const compData = await compRes.json();
-      const anomData = await anomRes.json();
-      const runsData = await runsRes.json();
+      if (metricsData.success && metricsData.summary) {
+        setSummary(metricsData.summary);
+      }
 
-      if (metricsData.success) setSummary(metricsData.summary);
-      if (trendData.success) setTrend(trendData.data);
-      if (compData.success) setComparison(compData.data);
-      if (anomData.success) setAnomalies(anomData.data);
-      if (runsData.success) setPipelineRuns(runsData.data);
+      // Fetch supplementary endpoints concurrently without blocking the core dashboard
+      const [trendData, compData, anomData, runsData] = await Promise.all([
+        safeFetchJson(`/api/metrics/trend?region=${selectedRegion}`),
+        safeFetchJson('/api/metrics/comparison'),
+        safeFetchJson('/api/anomalies'),
+        safeFetchJson('/api/pipeline/runs')
+      ]);
+
+      if (trendData?.success) setTrend(trendData.data || []);
+      if (compData?.success) setComparison(compData.data || []);
+      if (anomData?.success) setAnomalies(anomData.data || []);
+      if (runsData?.success) setPipelineRuns(runsData.data || []);
     } catch (err: any) {
       console.error('Data loading error:', err);
       setError(err?.message || 'Failed to connect to PulseOps analytics server');
@@ -80,6 +97,18 @@ export default function App() {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleRetryWithSync = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Trigger background sync to ensure data tables are populated
+      await fetch('/api/sync', { method: 'POST' }).catch(() => {});
+    } catch (e) {
+      // ignore
+    }
+    await loadPlatformData();
   };
 
   const allRegionNames = comparison.map(c => c.region);
@@ -121,11 +150,8 @@ export default function App() {
             <h3 className="text-sm font-bold text-white font-mono uppercase">API Synchronization Error</h3>
             <p className="text-xs text-slate-300 font-mono">{error}</p>
             <button
-              onClick={() => {
-                setLoading(true);
-                loadPlatformData();
-              }}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded text-xs font-mono transition-colors cursor-pointer"
+              onClick={handleRetryWithSync}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/40 rounded text-xs font-mono font-semibold transition-colors cursor-pointer"
             >
               Retry Ingestion Fetch
             </button>

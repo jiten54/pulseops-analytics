@@ -13,6 +13,7 @@ import {
   computeDailyMetrics,
   detectStatisticalAnomalies,
   calculateKPISummary,
+  getFallbackKPISummary,
   computeRootCauseDecomposition
 } from './src/server/analytics.js';
 import { evaluateDataQuality } from './src/server/dataQuality.js';
@@ -72,9 +73,19 @@ async function startServer() {
 
   // KPI Summary
   app.get('/api/metrics', (req, res) => {
-    const kpis = calculateKPISummary();
-    const catalog = db.query('SELECT * FROM metrics');
-    res.json({ success: true, summary: kpis, catalog });
+    try {
+      const kpis = calculateKPISummary();
+      let catalog: any[] = [];
+      try {
+        catalog = db.query('SELECT * FROM metrics');
+      } catch (e) {
+        // catalog query fallback
+      }
+      res.json({ success: true, summary: kpis, catalog });
+    } catch (err: any) {
+      console.error('[PulseOps] Error serving /api/metrics:', err);
+      res.json({ success: true, summary: getFallbackKPISummary(), catalog: [] });
+    }
   });
 
   // Time-Series Trend

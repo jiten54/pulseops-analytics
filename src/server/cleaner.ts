@@ -26,6 +26,7 @@ export interface RawInputRecord {
 
 export interface ValidationResult {
   isValid: boolean;
+  isDuplicate?: boolean;
   rejectionReason: string | null;
   cleanedRecord?: {
     id: string;
@@ -90,7 +91,7 @@ export class DataCleaner {
     // 3. Duplicate check
     const compositeKey = `${raw.source_id}_${raw.entity_id}_${raw.period_from}`;
     if (this.existingKeys.has(compositeKey)) {
-      return { isValid: false, rejectionReason: 'DUPLICATE_RECORD' };
+      return { isValid: false, isDuplicate: true, rejectionReason: 'DUPLICATE_RECORD' };
     }
 
     // 4. Numeric value verification
