@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  pulseops-app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://pulseops:secure_pass@postgres:5432/pulseops
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pulseops-db
+    environment:
+      POSTGRES_DB: pulseops
+      POSTGRES_USER: pulseops
+      POSTGRES_PASSWORD: secure_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    restart: unless-stopped
+
+volumes:
+  pgdata:
